@@ -48,3 +48,4 @@ docker-compose.override.yml
 *.tmp
 .DS_Store
 Thumbs.db
+Notes.py
