@@ -12,7 +12,7 @@ def train():
     embeddings = data["X"]
     labels = data["y"]
     print(f"📊 Loaded {len(embeddings)} embeddings for {len(np.unique(labels))} people.")
-    # encoding the names to numbers [john,doe]->[0,1]
+    # encoding the names to numbers [john,scarlett]->[0,1]
     le = LabelEncoder()
     encoded_labels=le.fit_transform(labels)
 

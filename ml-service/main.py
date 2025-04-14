@@ -11,6 +11,8 @@ import torch
 import numpy as np
 from facenet_pytorch import MTCNN, InceptionResnetV1
 import io
+from typing import List
+from trainer import train
 
 #initialise models
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -36,7 +38,35 @@ class UserInfo(BaseModel):
     name: str
     age: int
 
+def update_model(new_embeddings, new_labels):
+#load embeddings and labels to add new face
+    path=os.path.join(os.path.dirname(__file__),"embeddings")
+    data = np.load(f"{path}/face_data.npz")
+    embeddings = data["X"]
+    labels = data["y"]
+    #cannot directly append numpy arrays
+    embeddings = np.concatenate([embeddings, new_embeddings], axis=0)
+    labels = np.concatenate([labels, new_labels], axis=0)
 
+
+    try:
+        path=os.path.join(os.path.dirname(__file__),"embeddings")
+        os.makedirs(path, exist_ok=True)
+
+        #specialised for numpy arrays, faster
+        data_to_save= {
+            "X": embeddings,
+            "y": labels,
+        }
+        # np.savez(f"{path}/face_data.npz", X=embeddings, y=labels)
+        np.savez(f"{path}/face_data.npz",**data_to_save)
+        print(f"💾 Saved embeddings/face_data.npz")
+        print(f"📊 Saved {len(embeddings)} embeddings for {len(np.unique(labels))} people.")
+        train()
+    except Exception as e:
+        print(f"❌ Failed to save npz: {e}")
+    
+    
 #create get "/" route
 @app.get("/")
 def get_root():
@@ -46,14 +76,43 @@ def get_root():
 #create post route
 @app.post("/register")
 #user is the variable, userinfo is the json data structure
-def get_info(user: UserInfo):
-    return JSONResponse(content={"msg": f"✅test: Post working!!! User name- {user.name} age-{user.age}"})
+async def register(
+    name: str= Form(...),
+    images: List[UploadFile] = File(...)
+    ):
+    new_embeddings = []
+    skipped=0
+    #format the label
+    new_labels= ["_".join(name.split())]*len(images)
+    for file in images:
+        try:
+            img_bytes = await file.read()
+            image= Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            face_tensor= mtcnn(image)
+            if face_tensor is not None:
+                face_embedding = resnet(face_tensor.unsqueeze(0).to(device))
+                #add the embedding in the list, detach the tensor which was in gpu, 
+                #shift to cpu for numpy, pick the 1st element of a vector [1,512]->[512]
+                new_embeddings.append(face_embedding.detach().cpu().numpy()[0])
+
+            else:
+                skipped+=1
+        except Exception as e:
+            print(f"Failed process {file.filename}: {e}")
+
+    if(skipped):
+            return JSONResponse(content={"msg": f"{skipped} images were skipped, Add more for improved accuracy"})
+    else:
+         update_model(new_embeddings,new_labels)
+
+        
+    return JSONResponse(content={"label": new_labels})
+        
+    
 
 @app.post("/recognise")
 #pass the required fields as arguments
 async def recognise(
-    name: str =Form(...),
-    age: int= Form(...),
     face_image: UploadFile = File(...)
 ):
     #load image
@@ -77,6 +136,9 @@ async def recognise(
         pred = model.predict(face_embedding)[0]
         prob = max(model.predict_proba(face_embedding)[0])
         name = le.inverse_transform([pred])[0]
+        if prob < 0.6:
+            return {"match": "Unknown", "confidence": prob}
+
         return JSONResponse(content={
             "match": name,
             "confidence": round(float(prob), 4)
