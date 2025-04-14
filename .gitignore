@@ -20,6 +20,7 @@ venv/
 # Face data and models
 ml-service/data/
 ml-service/models/
+ml-service/uploads/
 ml-service/embeddings/
 
 # === Node.js & React (frontend/backend) ===

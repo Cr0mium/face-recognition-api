@@ -13,6 +13,7 @@ from facenet_pytorch import MTCNN, InceptionResnetV1
 import io
 from typing import List
 from trainer import train
+from datetime import datetime
 
 #initialise models
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -20,14 +21,16 @@ mtcnn = MTCNN(image_size=160,margin=0,device=device)
 resnet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
 
 #load trained weights and encoded labels
-try:
-    path=os.path.join(os.path.dirname(__file__),"models")
-    model_data= joblib.load(f"{path}/knn_classifier.pkl")
-    model=model_data['model']
-    le=model_data['label_encoder']
-    print(f"📊Loaded model successful {model_data}")
-except Exception as e:
-    print(f"❌ Failed to load Model {e}")
+def load_knn():
+    try:
+        path=os.path.join(os.path.dirname(__file__),"models")
+        model_data= joblib.load(f"{path}/knn_classifier.pkl")
+        model=model_data['model']
+        le=model_data['label_encoder']
+        print(f"📊Loaded model successful {model_data}")
+        return model,le
+    except Exception as e:
+        print(f"❌ Failed to load Model {e}")
 
 
 #like express app
@@ -84,7 +87,7 @@ async def register(
     skipped=0
     #format the label
     new_labels= ["_".join(name.split())]*len(images)
-    for file in images:
+    for i,file in enumerate(images):
         try:
             img_bytes = await file.read()
             image= Image.open(io.BytesIO(img_bytes)).convert("RGB")
@@ -94,14 +97,17 @@ async def register(
                 #add the embedding in the list, detach the tensor which was in gpu, 
                 #shift to cpu for numpy, pick the 1st element of a vector [1,512]->[512]
                 new_embeddings.append(face_embedding.detach().cpu().numpy()[0])
-
+                path= os.path.join(os.path.dirname(__file__),"data","_".join(name.split()))
+                os.makedirs(path, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                image.save(os.path.join(path, f"{timestamp}_{i+1}.jpg"))
             else:
                 skipped+=1
         except Exception as e:
             print(f"Failed process {file.filename}: {e}")
 
     if(skipped):
-            return JSONResponse(content={"msg": f"{skipped} images were skipped, Add more for improved accuracy"})
+            return JSONResponse(content={"msg": f"{skipped} images were skipped, Adding additional images will help with accuracy"})
     else:
          update_model(new_embeddings,new_labels)
 
@@ -133,12 +139,16 @@ async def recognise(
         # predict
         # for prediction .numpy()[0] is not used as the expected vector in [1,512]
         # for saving embeddings, we use [512]
+        model,le=load_knn()
         pred = model.predict(face_embedding)[0]
         prob = max(model.predict_proba(face_embedding)[0])
         name = le.inverse_transform([pred])[0]
         if prob < 0.6:
             return {"match": "Unknown", "confidence": prob}
-
+        path= os.path.join(os.path.dirname(__file__),"uploads")
+        os.makedirs(path, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        image.save(os.path.join(path, f"{name}_{prob:%}_{timestamp}.jpg"))
         return JSONResponse(content={
             "match": name,
             "confidence": round(float(prob), 4)
