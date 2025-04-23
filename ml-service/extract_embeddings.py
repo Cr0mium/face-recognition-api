@@ -62,11 +62,12 @@ if __name__ == "__main__":
         path=os.path.join(os.path.dirname(__file__),"embeddings")
         os.makedirs(path, exist_ok=True)
 
-        #specialised for numpy arrays, faster
+        
         data_to_save= {
             "X": embeddings,
             "y": labels,
         }
+        #specialised for numpy arrays, faster
         # np.savez(f"{path}/face_data.npz", X=embeddings, y=labels)
         np.savez(f"{path}/face_data.npz",**data_to_save)
         print(f"💾 Saved embeddings/face_data.npz")

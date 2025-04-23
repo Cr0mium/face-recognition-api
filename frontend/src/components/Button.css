@@ -1,0 +1,18 @@
+.squareBtn{
+    /* background-color: #EEEEEE; */
+    height: 120px;
+    width: 120px;
+    border: 15px solid;
+    border-color: #EEEEEE;
+    border-radius: 20%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 10px;
+}
+
+img{
+    height: 75px;
+    overflow: hidden;
+    border-radius: 20%;
+}

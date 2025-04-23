@@ -14,6 +14,8 @@ import io
 from typing import List
 from trainer import train
 from datetime import datetime
+from fastapi.middleware.cors import CORSMiddleware
+
 
 #initialise models
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -32,9 +34,18 @@ def load_knn():
     except Exception as e:
         print(f"❌ Failed to load Model {e}")
 
+model,le=load_knn()
 
 #like express app
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # You can restrict this to ["http://localhost:5173"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 #request data structure only for json
 class UserInfo(BaseModel):
@@ -109,8 +120,8 @@ async def register(
     if(skipped):
             return JSONResponse(content={"msg": f"{skipped} images were skipped, Adding additional images will help with accuracy"})
     else:
-         update_model(new_embeddings,new_labels)
-
+        update_model(new_embeddings,new_labels)
+        model,le=load_knn()
         
     return JSONResponse(content={"label": new_labels})
         
@@ -121,6 +132,7 @@ async def register(
 async def recognise(
     face_image: UploadFile = File(...)
 ):
+    # return JSONResponse(content={"Post request":"OK"})
     #load image
     img_bytes= await face_image.read() #fastapi reads the file as raw bytes
     #raw bytes is converted into image using io, which in opened as normal image
@@ -139,17 +151,16 @@ async def recognise(
         # predict
         # for prediction .numpy()[0] is not used as the expected vector in [1,512]
         # for saving embeddings, we use [512]
-        model,le=load_knn()
         pred = model.predict(face_embedding)[0]
         prob = max(model.predict_proba(face_embedding)[0])
         name = le.inverse_transform([pred])[0]
         if prob < 0.6:
-            return {"match": "Unknown", "confidence": prob}
+            return JSONResponse(content={"match": "Unknown", "confidence": prob})
         path= os.path.join(os.path.dirname(__file__),"uploads")
         os.makedirs(path, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        image.save(os.path.join(path, f"{name}_{prob:%}_{timestamp}.jpg"))
+        image.save(os.path.join(path, f"{name}_{round(prob, 2)}_{timestamp}.jpg"))
         return JSONResponse(content={
             "match": name,
-            "confidence": round(float(prob), 4)
+            "confidence": round(float(prob)*100, 2)
         })
